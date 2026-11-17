@@ -419,8 +419,8 @@ def fence_disable_block_reason(
 def indoors_on_wifi(collar: dict[str, Any]) -> bool:
     """Return True when the collar reports it is indoors on its configured Wi-Fi.
 
-    GPS is unreliable indoors, so this is used by the device tracker to pin the
-    pet to Home instead of drifting on a jittery fix.
+    The device tracker treats this as Home only when no source reports a
+    position. A reported position always decides the zone instead.
     """
     status = nested(collar, "petInfo", "telemetry", "gpsAccuracyStatus")
     adapter = telemetry(collar, "currentAdapter")
