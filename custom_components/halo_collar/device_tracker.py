@@ -8,7 +8,7 @@ from homeassistant.components.device_tracker.const import SourceType
 
 from .const import DOMAIN
 from .entity import HaloEntity
-from .helpers import indoors_on_wifi
+from .helpers import TrackerLocation, indoors_on_wifi, tracker_location
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -24,9 +24,9 @@ if hasattr(TrackerEntity, "in_zones"):
     class _IndoorHomeTrackerMixin:
         @property
         def in_zones(self) -> list[str] | None:
-            """Prefer Home zone membership while Halo reports indoor Wi-Fi."""
+            """Assume Home on indoor Wi-Fi only when Halo reports no position."""
             collar = self.collar
-            if collar is not None and indoors_on_wifi(collar):
+            if collar is not None and indoors_on_wifi(collar) and self._location is None:
                 return [ENTITY_ID_HOME]
             return None
 
@@ -38,7 +38,7 @@ else:
         def location_name(self) -> str | None:
             """Use the legacy location API on older supported HA releases."""
             collar = self.collar
-            if collar is not None and indoors_on_wifi(collar):
+            if collar is not None and indoors_on_wifi(collar) and self._location is None:
                 return STATE_HOME
             return None
 
@@ -56,19 +56,29 @@ class HaloPetTracker(_IndoorHomeTrackerMixin, HaloEntity, TrackerEntity):
         return SourceType.GPS
 
     @property
+    def _location(self) -> TrackerLocation | None:
+        return tracker_location(self.collar, self.pet)
+
+    @property
     def latitude(self) -> float | None:
-        pet_info = (self.collar or {}).get("petInfo", {})
-        location = pet_info.get("location") or pet_info.get("lastLocation") or {}
-        return location.get("latitude")
+        location = self._location
+        return None if location is None else location["latitude"]
 
     @property
     def longitude(self) -> float | None:
-        pet_info = (self.collar or {}).get("petInfo", {})
-        location = pet_info.get("location") or pet_info.get("lastLocation") or {}
-        return location.get("longitude")
+        location = self._location
+        return None if location is None else location["longitude"]
 
     @property
-    def location_accuracy(self) -> float | None:
-        return ((self.collar or {}).get("petInfo", {}).get("telemetry", {}) or {}).get(
-            "gpsAccuracyInMeters"
-        )
+    def location_accuracy(self) -> float:
+        location = self._location
+        if location is None or location["accuracy"] is None:
+            return 0
+        return location["accuracy"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        location = self._location
+        if location is None or location["reported_at"] is None:
+            return None
+        return {"location_reported_at": location["reported_at"].isoformat()}

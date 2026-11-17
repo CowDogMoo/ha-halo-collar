@@ -38,6 +38,7 @@ from custom_components.halo_collar.helpers import (
     redact,
     reported_activity_options,
     reporting_issue,
+    tracker_location,
 )
 
 
@@ -649,6 +650,72 @@ def test_indoors_on_wifi_requires_both_signals():
     assert indoors_on_wifi(indoors_cellular) is False
     assert indoors_on_wifi(outdoors_wifi) is False
     assert indoors_on_wifi({}) is False
+
+
+def test_tracker_location_prefers_collar_location_then_last_location():
+    collar = {
+        "petInfo": {
+            "location": {"latitude": 10.5, "longitude": 20.25},
+            "lastLocation": {"latitude": -1.0, "longitude": -2.0},
+            "telemetry": {"gpsAccuracyInMeters": 4.0},
+        }
+    }
+    pet = {"telemetry": {"latitude": 30.0, "longitude": 40.0, "gpsAccuracyInMeters": 1.0}}
+    assert tracker_location(collar, pet) == {
+        "latitude": 10.5,
+        "longitude": 20.25,
+        "accuracy": 4.0,
+        "reported_at": None,
+    }
+    collar["petInfo"]["location"] = {"latitude": 10.5}
+    assert tracker_location(collar, pet)["latitude"] == -1.0
+
+
+def test_tracker_location_falls_back_to_pet_telemetry_fix():
+    collar = {"petInfo": {"id": "pet-1", "telemetry": {"gpsAccuracyInMeters": 9.0}}}
+    pet = {
+        "telemetry": {
+            "latitude": "12.5",
+            "longitude": "-45.25",
+            "gpsAccuracyInMeters": "2.5",
+            "manifest": {"timestamp": "2026-01-02T03:04:05Z"},
+        }
+    }
+    assert tracker_location(collar, pet) == {
+        "latitude": 12.5,
+        "longitude": -45.25,
+        "accuracy": 2.5,
+        "reported_at": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    }
+    del pet["telemetry"]["gpsAccuracyInMeters"]
+    pet["telemetry"]["manifest"] = {"timestamp": "not-a-time"}
+    fallback = tracker_location(collar, pet)
+    assert (fallback["accuracy"], fallback["reported_at"]) == (9.0, None)
+
+
+@pytest.mark.parametrize(
+    "fix",
+    [
+        {},
+        {"latitude": 12.5},
+        {"latitude": None, "longitude": 1.0},
+        {"latitude": "", "longitude": ""},
+        {"latitude": True, "longitude": 1.0},
+        {"latitude": "nan", "longitude": 1.0},
+        {"latitude": 91.0, "longitude": 1.0},
+        {"latitude": 1.0, "longitude": -180.5},
+        {"latitude": [1.0], "longitude": 1.0},
+    ],
+)
+def test_tracker_location_rejects_incomplete_or_invalid_fixes(fix):
+    collar = {"petInfo": {"location": dict(fix), "lastLocation": dict(fix)}}
+    assert tracker_location(collar, {"telemetry": dict(fix)}) is None
+
+
+@pytest.mark.parametrize("pet", [None, {}, {"telemetry": None}, {"telemetry": []}])
+def test_tracker_location_without_any_position_is_unknown(pet):
+    assert tracker_location({"petInfo": {"telemetry": {}}}, pet) is None
+    assert tracker_location(None, pet) is None
 
 
 def test_redact_masks_sensitive_collar_payload_without_mutating_input():

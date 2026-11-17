@@ -1318,7 +1318,9 @@ async def test_runtime_subscription_entity_fails_soft_on_empty_and_malformed_pay
 
 
 async def test_runtime_tracker_uses_home_zone_when_halo_reports_indoor_wifi(hass):
-    client = FakeHaloClient(_state(indoors=True))
+    state = _state(indoors=True)
+    state.collars[0]["petInfo"].pop("location")
+    client = FakeHaloClient(state)
     entry = _entry({})
     entry.add_to_hass(hass)
 
@@ -1327,6 +1329,19 @@ async def test_runtime_tracker_uses_home_zone_when_halo_reports_indoor_wifi(hass
     tracker = hass.states.get("device_tracker.cowboy")
     assert tracker is not None
     assert tracker.state == "home"
+    assert "latitude" not in tracker.attributes
+
+
+async def test_runtime_tracker_reported_position_outranks_indoor_wifi(hass):
+    client = FakeHaloClient(_state(indoors=True))
+    entry = _entry({})
+    entry.add_to_hass(hass)
+
+    await _setup(hass, entry, client)
+
+    tracker = hass.states.get("device_tracker.cowboy")
+    assert tracker.state == "not_home"
+    assert (tracker.attributes["latitude"], tracker.attributes["longitude"]) == (42.0, -83.0)
 
 
 @pytest.mark.parametrize(
@@ -1414,6 +1429,73 @@ async def test_runtime_tracker_reports_current_or_last_known_coordinates(
         if key in tracker.attributes
     }
     assert (tracker.state, coordinates) == (expected_state, expected)
+
+
+def _state_with_pet_telemetry_fix(hass, *, at_home: bool, as_strings: bool = False):
+    """Collar petInfo without location keys; the fix is only in pet telemetry."""
+    state = _state()
+    reported = datetime.now(UTC).replace(microsecond=0)
+    state.collars[0]["petInfo"] = {
+        "id": "pet-1",
+        "name": "Cowboy",
+        "colorHex": "#000000",
+        "fallbackColorName": "synthetic",
+        "iconUrl": "https://example.invalid/icon.png",
+        "telemetry": {"gpsAccuracyInMeters": 9.0, "gpsAccuracyStatus": "outdoors"},
+    }
+    latitude = hass.config.latitude if at_home else hass.config.latitude + 0.5
+    longitude = hass.config.longitude if at_home else hass.config.longitude + 0.5
+    state.pets[0]["telemetry"].update(
+        {
+            "latitude": str(latitude) if as_strings else latitude,
+            "longitude": str(longitude) if as_strings else longitude,
+            "gpsAccuracyInMeters": "2.5" if as_strings else 2.5,
+            "gpsAccuracyStatus": "outdoors",
+            "manifest": {"timestamp": reported.strftime("%Y-%m-%dT%H:%M:%SZ")},
+        }
+    )
+    return state, latitude, longitude, reported
+
+
+@pytest.mark.parametrize("as_strings", [False, True], ids=["numbers", "strings"])
+@pytest.mark.parametrize(
+    ("at_home", "expected_state"), [(True, "home"), (False, "not_home")], ids=["home", "away"]
+)
+async def test_runtime_tracker_falls_back_to_pet_telemetry_fix(
+    hass, at_home, expected_state, as_strings
+):
+    state, latitude, longitude, reported = _state_with_pet_telemetry_fix(
+        hass, at_home=at_home, as_strings=as_strings
+    )
+    client = FakeHaloClient(state)
+    entry = _entry({CONF_ENABLE_FENCE_CONTROLS: False})
+    entry.add_to_hass(hass)
+
+    await _setup(hass, entry, client)
+
+    tracker = hass.states.get("device_tracker.cowboy")
+    assert tracker.state == expected_state
+    assert tracker.attributes["latitude"] == pytest.approx(latitude)
+    assert tracker.attributes["longitude"] == pytest.approx(longitude)
+    assert tracker.attributes["gps_accuracy"] == 2.5
+    assert tracker.attributes["location_reported_at"] == reported.isoformat()
+    assert tracker.attributes["in_zones"] == (["zone.home"] if at_home else [])
+
+
+async def test_runtime_tracker_follows_new_pet_telemetry_fix(hass, freezer):
+    state, *_ = _state_with_pet_telemetry_fix(hass, at_home=True)
+    client = FakeHaloClient(state)
+    entry = _entry({CONF_ENABLE_FENCE_CONTROLS: False})
+    entry.add_to_hass(hass)
+    await _setup(hass, entry, client)
+    coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
+    assert hass.states.get("device_tracker.cowboy").state == "home"
+
+    freezer.tick(1800)
+    state.pets[0]["telemetry"]["latitude"] = hass.config.latitude + 0.5
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get("device_tracker.cowboy").state == "not_home"
 
 
 async def test_runtime_reload_preserves_domain_lock_and_revokes_disable_surface(hass):

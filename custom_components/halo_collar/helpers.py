@@ -432,6 +432,63 @@ def indoors_on_wifi(collar: dict[str, Any]) -> bool:
     )
 
 
+class TrackerLocation(TypedDict):
+    latitude: float
+    longitude: float
+    accuracy: float | None
+    reported_at: datetime | None
+
+
+def _coordinate_pair(source: Any) -> tuple[float, float] | None:
+    """Return one finite, in-range latitude/longitude pair from a single mapping."""
+    if not isinstance(source, dict):
+        return None
+    latitude = finite_number(source.get("latitude"))
+    longitude = finite_number(source.get("longitude"))
+    if latitude is None or longitude is None:
+        return None
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return None
+    return latitude, longitude
+
+
+def tracker_location(
+    collar: dict[str, Any] | None, pet: dict[str, Any] | None
+) -> TrackerLocation | None:
+    """Return the pet's reported position, preferring collar location fields.
+
+    Some accounts' collar payloads carry ``petInfo.location`` or
+    ``petInfo.lastLocation``. Others omit both and report the latest GPS fix
+    only in the matched pet's ``telemetry``. Coordinates always come as one
+    pair from one source so a fallback never mixes positions.
+    """
+    pet_info = nested(collar or {}, "petInfo")
+    collar_accuracy = non_negative_number(
+        nested(pet_info or {}, "telemetry", "gpsAccuracyInMeters")
+    )
+    for key in ("location", "lastLocation"):
+        pair = _coordinate_pair(nested(pet_info or {}, key))
+        if pair is not None:
+            return {
+                "latitude": pair[0],
+                "longitude": pair[1],
+                "accuracy": collar_accuracy,
+                "reported_at": None,
+            }
+
+    pet_telemetry = nested(pet or {}, "telemetry")
+    pair = _coordinate_pair(pet_telemetry)
+    if pair is None:
+        return None
+    accuracy = non_negative_number(nested(pet_telemetry, "gpsAccuracyInMeters"))
+    return {
+        "latitude": pair[0],
+        "longitude": pair[1],
+        "accuracy": collar_accuracy if accuracy is None else accuracy,
+        "reported_at": parse_timestamp(nested(pet_telemetry, "manifest", "timestamp")),
+    }
+
+
 def pretty_status(value: Any) -> Any:
     """Return human-readable labels for compact Halo API status strings."""
     if not isinstance(value, str):

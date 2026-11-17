@@ -26,7 +26,7 @@ from custom_components.halo_collar.device_tracker import HaloPetTracker
 from custom_components.halo_collar.transport import HaloWriteTransport
 
 
-def _tracker(*, indoors: bool) -> HaloPetTracker:
+def _tracker(*, indoors: bool, pet_telemetry: dict | None = None) -> HaloPetTracker:
     status = "indoors" if indoors else "outdoors"
     collar = {
         "id": "collar-1",
@@ -36,23 +36,28 @@ def _tracker(*, indoors: bool) -> HaloPetTracker:
         },
         "telemetry": {"currentAdapter": "wifi"},
     }
+    pet = {"id": "pet-1", "collarInfo": {"id": "collar-1"}, "telemetry": pet_telemetry or {}}
     tracker = object.__new__(HaloPetTracker)
     tracker._collar_id = collar["id"]
-    tracker.coordinator = SimpleNamespace(data=SimpleNamespace(collars=[collar]))
+    tracker.coordinator = SimpleNamespace(data=SimpleNamespace(collars=[collar], pets=[pet]))
     return tracker
 
 
 def test_indoor_home_mapping_matches_installed_tracker_api():
     indoor = _tracker(indoors=True)
     outdoor = _tracker(indoors=False)
+    positioned = _tracker(indoors=True, pet_telemetry={"latitude": 1.25, "longitude": 2.5})
 
+    assert (positioned.latitude, positioned.longitude) == (1.25, 2.5)
     if hasattr(TrackerEntity, "in_zones"):
         assert indoor.in_zones == ["zone.home"]
         assert outdoor.in_zones is None
+        assert positioned.in_zones is None
         assert "location_name" not in HaloPetTracker.__dict__
     else:
         assert indoor.location_name == "home"
         assert outdoor.location_name is None
+        assert positioned.location_name is None
         assert "in_zones" not in HaloPetTracker.__dict__
 
 
