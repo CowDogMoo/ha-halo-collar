@@ -1434,7 +1434,6 @@ async def test_runtime_tracker_reports_current_or_last_known_coordinates(
 def _state_with_pet_telemetry_fix(hass, *, at_home: bool, as_strings: bool = False):
     """Collar petInfo without location keys; the fix is only in pet telemetry."""
     state = _state()
-    reported = datetime.now(UTC).replace(microsecond=0)
     state.collars[0]["petInfo"] = {
         "id": "pet-1",
         "name": "Cowboy",
@@ -1451,10 +1450,9 @@ def _state_with_pet_telemetry_fix(hass, *, at_home: bool, as_strings: bool = Fal
             "longitude": str(longitude) if as_strings else longitude,
             "gpsAccuracyInMeters": "2.5" if as_strings else 2.5,
             "gpsAccuracyStatus": "outdoors",
-            "manifest": {"timestamp": reported.strftime("%Y-%m-%dT%H:%M:%SZ")},
         }
     )
-    return state, latitude, longitude, reported
+    return state, latitude, longitude
 
 
 @pytest.mark.parametrize("as_strings", [False, True], ids=["numbers", "strings"])
@@ -1464,7 +1462,7 @@ def _state_with_pet_telemetry_fix(hass, *, at_home: bool, as_strings: bool = Fal
 async def test_runtime_tracker_falls_back_to_pet_telemetry_fix(
     hass, at_home, expected_state, as_strings
 ):
-    state, latitude, longitude, reported = _state_with_pet_telemetry_fix(
+    state, latitude, longitude = _state_with_pet_telemetry_fix(
         hass, at_home=at_home, as_strings=as_strings
     )
     client = FakeHaloClient(state)
@@ -1478,7 +1476,6 @@ async def test_runtime_tracker_falls_back_to_pet_telemetry_fix(
     assert tracker.attributes["latitude"] == pytest.approx(latitude)
     assert tracker.attributes["longitude"] == pytest.approx(longitude)
     assert tracker.attributes["gps_accuracy"] == 2.5
-    assert tracker.attributes["location_reported_at"] == reported.isoformat()
     assert tracker.attributes["in_zones"] == (["zone.home"] if at_home else [])
 
 

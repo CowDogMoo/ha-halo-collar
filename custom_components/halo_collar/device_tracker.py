@@ -75,10 +75,3 @@ class HaloPetTracker(_IndoorHomeTrackerMixin, HaloEntity, TrackerEntity):
         if location is None or location["accuracy"] is None:
             return 0
         return location["accuracy"]
-
-    @property
-    def extra_state_attributes(self) -> dict[str, str] | None:
-        location = self._location
-        if location is None or location["reported_at"] is None:
-            return None
-        return {"location_reported_at": location["reported_at"].isoformat()}

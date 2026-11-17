@@ -436,7 +436,6 @@ class TrackerLocation(TypedDict):
     latitude: float
     longitude: float
     accuracy: float | None
-    reported_at: datetime | None
 
 
 def _coordinate_pair(source: Any) -> tuple[float, float] | None:
@@ -473,7 +472,6 @@ def tracker_location(
                 "latitude": pair[0],
                 "longitude": pair[1],
                 "accuracy": collar_accuracy,
-                "reported_at": None,
             }
 
     pet_telemetry = nested(pet or {}, "telemetry")
@@ -485,7 +483,6 @@ def tracker_location(
         "latitude": pair[0],
         "longitude": pair[1],
         "accuracy": collar_accuracy if accuracy is None else accuracy,
-        "reported_at": parse_timestamp(nested(pet_telemetry, "manifest", "timestamp")),
     }
 
 

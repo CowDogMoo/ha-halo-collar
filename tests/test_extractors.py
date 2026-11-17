@@ -665,7 +665,6 @@ def test_tracker_location_prefers_collar_location_then_last_location():
         "latitude": 10.5,
         "longitude": 20.25,
         "accuracy": 4.0,
-        "reported_at": None,
     }
     collar["petInfo"]["location"] = {"latitude": 10.5}
     assert tracker_location(collar, pet)["latitude"] == -1.0
@@ -678,19 +677,15 @@ def test_tracker_location_falls_back_to_pet_telemetry_fix():
             "latitude": "12.5",
             "longitude": "-45.25",
             "gpsAccuracyInMeters": "2.5",
-            "manifest": {"timestamp": "2026-01-02T03:04:05Z"},
         }
     }
     assert tracker_location(collar, pet) == {
         "latitude": 12.5,
         "longitude": -45.25,
         "accuracy": 2.5,
-        "reported_at": datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
     }
     del pet["telemetry"]["gpsAccuracyInMeters"]
-    pet["telemetry"]["manifest"] = {"timestamp": "not-a-time"}
-    fallback = tracker_location(collar, pet)
-    assert (fallback["accuracy"], fallback["reported_at"]) == (9.0, None)
+    assert tracker_location(collar, pet)["accuracy"] == 9.0
 
 
 @pytest.mark.parametrize(
