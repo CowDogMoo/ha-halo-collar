@@ -18,7 +18,7 @@
 | One sensor is **unknown** | Halo may omit that optional value or return an invalid value. Check related telemetry. Unknown does not mean safe, off, or zero. |
 | Recent-walk sensors are **unknown** | No valid matching completed walk may exist in the first 30 records returned by Halo, or the optional history request failed or timed out. This does not prove that no historical walk exists. |
 | Telemetry entities are **unavailable** | Check the integration's setup, authentication, or refresh error. Required refresh failures make telemetry unavailable until a successful refresh. A removed collar also becomes unavailable. Advisory control-status sensors remain readable. Reauthenticate only when prompted. |
-| The tracker reports `home` but its map position differs | Halo's indoor and Wi-Fi indicators override the Home state. The integration does not verify the network or physical home location and keeps Halo's coordinates. Compare with the official app. |
+| The tracker reports `home` but shows no map position | Halo reported no position, so the tracker fell back to Halo's indoor and Wi-Fi indicators. The integration does not verify the network or physical home location. Compare with the official app. |
 
 ## Recover authentication
 
